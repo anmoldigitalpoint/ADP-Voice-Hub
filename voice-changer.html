@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Changer — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Voice Changer", sub: "Apni recorded/uploaded awaaz par Deep, Chipmunk, Robot ya Echo effect lagayein." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="drop-zone" id="drop-zone">🎭 Click ya drag karke audio file yahan daalein</div>
+    <input type="file" id="file-input" accept="audio/*" style="display:none;">
+    <div class="status-line" id="status"></div>
+
+    <div class="field-label" style="margin-top:14px;"><span>Effect</span></div>
+    <select id="effect-select">
+      <option value="deep">Deep Voice</option>
+      <option value="chipmunk">Chipmunk / High Pitch</option>
+      <option value="robot">Robot</option>
+      <option value="echo">Echo / Hall</option>
+    </select>
+
+    <div class="btn-group">
+      <button class="control-btn" id="btn-apply">🎭 Apply Effect</button>
+      <button class="control-btn secondary" id="btn-download" disabled>⬇ Download</button>
+    </div>
+    <audio id="preview" controls style="display:none;"></audio>
+    <div class="hint">Note: Deep/Chipmunk effects awaaz ki speed bhi thodi change karte hain (simple free pitch trick) — Robot aur Echo speed change nahi karte.</div>
+  </div>
+`);
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const statusEl = document.getElementById("status");
+const preview = document.getElementById("preview");
+let currentFile = null;
+let outBlob = null;
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => e.preventDefault());
+dropZone.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+function setFile(f) { currentFile = f; statusEl.textContent = `Selected: ${f.name} (${fmtBytes(f.size)})`; }
+
+document.getElementById("btn-apply").addEventListener("click", async () => {
+  if (!currentFile) { statusEl.textContent = "Pehle file choose karein."; return; }
+  statusEl.textContent = "Processing...";
+  const effect = document.getElementById("effect-select").value;
+
+  const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const arrayBuf = await currentFile.arrayBuffer();
+  const decoded = await tempCtx.decodeAudioData(arrayBuf);
+
+  let rate = 1;
+  if (effect === "deep") rate = 0.78;
+  if (effect === "chipmunk") rate = 1.4;
+
+  const outLength = effect === "echo" ? decoded.length + decoded.sampleRate * 1.5 : Math.ceil(decoded.length / rate);
+  const offline = new OfflineAudioContext(decoded.numberOfChannels, outLength, decoded.sampleRate);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.playbackRate.value = rate;
+
+  if (effect === "robot") {
+    // Ring-modulation style robot effect using a fast oscillator through a gain node
+    const osc = offline.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = 45;
+    const modGain = offline.createGain();
+    modGain.gain.value = 1;
+    osc.connect(modGain.gain);
+    const carrierGain = offline.createGain();
+    src.connect(carrierGain);
+    carrierGain.connect(offline.destination);
+    osc.connect(modGain);
+    modGain.connect(carrierGain.gain);
+    osc.start(0);
+    src.start(0);
+  } else if (effect === "echo") {
+    const delay = offline.createDelay(2.0);
+    delay.delayTime.value = 0.28;
+    const feedback = offline.createGain();
+    feedback.gain.value = 0.45;
+    const wetGain = offline.createGain();
+    wetGain.gain.value = 0.5;
+    src.connect(offline.destination);
+    src.connect(delay);
+    delay.connect(feedback);
+    feedback.connect(delay);
+    delay.connect(wetGain);
+    wetGain.connect(offline.destination);
+    src.start(0);
+  } else {
+    src.connect(offline.destination);
+    src.start(0);
+  }
+
+  const rendered = await offline.startRendering();
+  outBlob = audioBufferToWavBlob(rendered);
+  preview.src = URL.createObjectURL(outBlob);
+  preview.style.display = "block";
+  document.getElementById("btn-download").disabled = false;
+  statusEl.textContent = "Done!";
+});
+
+document.getElementById("btn-download").addEventListener("click", () => {
+  if (outBlob) downloadBlob(outBlob, "voice-changed.wav");
+});
+</script>
+</body>
+</html>

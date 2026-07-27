@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF to Speech — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "PDF to Speech", sub: "PDF upload karo, uska text nikal ke ise bolke sunaya jayega — free, sab kuch aapke browser mein." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="drop-zone" id="drop-zone">📕 Click ya drag karke PDF file yahan daalein</div>
+    <input type="file" id="pdf-input" accept="application/pdf" style="display:none;">
+    <div class="progress-bar" id="pdf-progress"><div></div></div>
+    <div class="status-line" id="pdf-status"></div>
+
+    <div class="field-label" style="margin-top:16px;"><span>Extracted text</span></div>
+    <textarea id="pdf-text" placeholder="PDF ka text yahan dikhega..."></textarea>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <div class="field-label"><span>Voice</span></div>
+        <select id="voice-select"></select>
+      </div>
+      <div>
+        <div class="field-label"><span>Speed</span><span id="rate-val">1.0x</span></div>
+        <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1">
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="control-btn" id="btn-play">▶ Play</button>
+      <button class="control-btn secondary" id="btn-pause">⏸ Pause</button>
+      <button class="control-btn secondary" id="btn-stop">⏹ Stop</button>
+    </div>
+  </div>
+`);
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const dropZone = document.getElementById("drop-zone");
+const pdfInput = document.getElementById("pdf-input");
+const statusEl = document.getElementById("pdf-status");
+const textEl = document.getElementById("pdf-text");
+const progressBar = document.getElementById("pdf-progress");
+
+dropZone.addEventListener("click", () => pdfInput.click());
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.style.borderColor = "var(--purple)"; });
+dropZone.addEventListener("drop", e => {
+  e.preventDefault();
+  if (e.dataTransfer.files[0]) handlePdf(e.dataTransfer.files[0]);
+});
+pdfInput.addEventListener("change", () => { if (pdfInput.files[0]) handlePdf(pdfInput.files[0]); });
+
+async function handlePdf(file) {
+  statusEl.textContent = `Reading ${file.name} (${fmtBytes(file.size)})...`;
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    fullText += content.items.map(it => it.str).join(" ") + "\n\n";
+    setProgress(progressBar, (i / pdf.numPages) * 100);
+    statusEl.textContent = `Page ${i}/${pdf.numPages} extract ho rahi hai...`;
+  }
+  const words = fullText.trim().split(/\s+/).filter(Boolean);
+  if (words.length > 5000) fullText = words.slice(0, 5000).join(" ");
+  textEl.value = fullText.trim();
+  statusEl.textContent = `Done — ${pdf.numPages} pages se text nikal liya.`;
+}
+
+const voiceSelect = document.getElementById("voice-select");
+loadVoicesOnce((voices) => {
+  voiceSelect.innerHTML = voices.map(v => `<option value="${v.voiceURI}">${v.name} (${classifyVoiceLang(v)})</option>`).join("");
+});
+
+const rateInput = document.getElementById("rate");
+rateInput.addEventListener("input", () => document.getElementById("rate-val").textContent = rateInput.value + "x");
+
+document.getElementById("btn-play").addEventListener("click", () => {
+  const text = textEl.value.trim();
+  if (!text) { statusEl.textContent = "Pehle PDF upload karein."; return; }
+  const selected = adpVoices.find(v => v.voiceURI === voiceSelect.value);
+  speakText({ text, voice: selected, rate: parseFloat(rateInput.value), onend: () => statusEl.textContent = "Playback complete." });
+  statusEl.textContent = "Bol raha hoon...";
+});
+document.getElementById("btn-pause").addEventListener("click", () => {
+  if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) window.speechSynthesis.pause();
+  else if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+});
+document.getElementById("btn-stop").addEventListener("click", () => window.speechSynthesis.cancel());
+</script>
+</body>
+</html>

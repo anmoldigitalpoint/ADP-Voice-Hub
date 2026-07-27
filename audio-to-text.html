@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio to Text — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Audio to Text", sub: "Bolo aur turant text mein convert ho jaye — live microphone se, free." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="row">
+      <div>
+        <div class="field-label"><span>Language</span></div>
+        <select id="stt-lang">
+          <option value="hi-IN">Hindi</option>
+          <option value="en-IN">English (India)</option>
+          <option value="en-US">English (US)</option>
+        </select>
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="control-btn" id="btn-mic">🎙️ Start Listening</button>
+      <button class="control-btn secondary" id="btn-mic-stop">⏹ Stop</button>
+      <button class="control-btn secondary" id="btn-copy">📋 Copy Text</button>
+      <button class="control-btn secondary" id="btn-clear">🗑 Clear</button>
+    </div>
+    <div class="status-line" id="stt-status">Ready.</div>
+    <textarea id="stt-output" style="margin-top:14px;" placeholder="Bola gaya text yahan aayega..."></textarea>
+    <div class="hint warn">Note: ye file upload se text nahi banata — sirf live microphone se bola gaya audio text mein convert hota hai. Best Chrome browser mein kaam karta hai.</div>
+  </div>
+`);
+
+const statusEl = document.getElementById("stt-status");
+const outputEl = document.getElementById("stt-output");
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let listening = false;
+
+if (!SpeechRecognition) {
+  statusEl.textContent = "Ye browser Speech Recognition support nahi karta. Chrome try karein.";
+  document.getElementById("btn-mic").disabled = true;
+} else {
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  recognition.onresult = (event) => {
+    let finalText = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) finalText += event.results[i][0].transcript + " ";
+    }
+    if (finalText) outputEl.value += finalText;
+  };
+
+  recognition.onerror = (e) => statusEl.textContent = "Error: " + e.error;
+  recognition.onend = () => {
+    if (listening) recognition.start(); // auto-restart while user hasn't pressed stop
+    else statusEl.textContent = "Stopped.";
+  };
+}
+
+document.getElementById("btn-mic").addEventListener("click", () => {
+  if (!recognition) return;
+  recognition.lang = document.getElementById("stt-lang").value;
+  listening = true;
+  recognition.start();
+  statusEl.textContent = "Sun raha hoon... bolna shuru karein.";
+});
+
+document.getElementById("btn-mic-stop").addEventListener("click", () => {
+  if (!recognition) return;
+  listening = false;
+  recognition.stop();
+});
+
+document.getElementById("btn-copy").addEventListener("click", () => {
+  navigator.clipboard.writeText(outputEl.value);
+  statusEl.textContent = "Text copy ho gaya.";
+});
+
+document.getElementById("btn-clear").addEventListener("click", () => {
+  outputEl.value = "";
+});
+</script>
+</body>
+</html>

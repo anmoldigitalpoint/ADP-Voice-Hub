@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Translator — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "AI Translator", sub: "Text ko kai languages mein translate karein — free public service, best-effort." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="field-label"><span>Text to translate</span></div>
+    <textarea id="src-text" placeholder="Yahan text likhein..."></textarea>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <div class="field-label"><span>From</span></div>
+        <select id="from-lang">
+          <option value="auto">Auto-detect</option>
+          <option value="hi">Hindi</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label"><span>To</span></div>
+        <select id="to-lang">
+          <option value="en">English</option>
+          <option value="hi">Hindi</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="ar">Arabic</option>
+          <option value="de">German</option>
+          <option value="ru">Russian</option>
+          <option value="zh">Chinese</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button class="control-btn" id="btn-translate">🌐 Translate</button>
+      <button class="control-btn secondary" id="btn-copy">📋 Copy Result</button>
+    </div>
+    <div class="status-line" id="status"></div>
+    <textarea id="result-text" style="margin-top:14px;" placeholder="Translation yahan aayegi..." readonly></textarea>
+    <div class="hint warn">Note: Free public translate service use ho raha hai — kabhi-kabhi slow ya temporarily down ho sakti hai.</div>
+  </div>
+`);
+
+const statusEl = document.getElementById("status");
+const resultEl = document.getElementById("result-text");
+
+async function tryTranslate(text, source, target) {
+  const endpoints = [
+    "https://libretranslate.de/translate",
+    "https://translate.argosopentech.com/translate"
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: text, source: source, target: target, format: "text" })
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.translatedText) return data.translatedText;
+    } catch (e) { /* try next endpoint */ }
+  }
+  return null;
+}
+
+document.getElementById("btn-translate").addEventListener("click", async () => {
+  const text = document.getElementById("src-text").value.trim();
+  if (!text) { statusEl.textContent = "Pehle kuch text likhein."; return; }
+  const from = document.getElementById("from-lang").value;
+  const to = document.getElementById("to-lang").value;
+
+  statusEl.textContent = "Translating...";
+  const result = await tryTranslate(text, from, to);
+  if (result) {
+    resultEl.value = result;
+    statusEl.textContent = "Done!";
+  } else {
+    statusEl.textContent = "Free translate service abhi available nahi hai — thodi der baad try karein.";
+  }
+});
+
+document.getElementById("btn-copy").addEventListener("click", () => {
+  navigator.clipboard.writeText(resultEl.value);
+  statusEl.textContent = "Result copy ho gaya.";
+});
+</script>
+</body>
+</html>

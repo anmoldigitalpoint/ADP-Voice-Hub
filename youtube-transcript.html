@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTube Transcript — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "YouTube Transcript", sub: "YouTube video ka link daalein aur transcript nikalein — free public service, best-effort." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="field-label"><span>YouTube video URL</span></div>
+    <input type="text" id="yt-url" placeholder="https://www.youtube.com/watch?v=...">
+    <div class="btn-group">
+      <button class="control-btn" id="btn-fetch">▶️ Get Transcript</button>
+      <button class="control-btn secondary" id="btn-copy">📋 Copy Text</button>
+    </div>
+    <div class="status-line" id="status"></div>
+    <textarea id="transcript-out" style="margin-top:14px;" placeholder="Transcript yahan aayega..."></textarea>
+    <div class="hint warn">Note: Ye free public service use karta hai jo kabhi-kabhi slow ho sakti hai ya kaam na kare (video ke captions off hone par bhi transcript nahi milega) — ye limitation service ki hai, hamesha available hone ki guarantee nahi.</div>
+  </div>
+`);
+
+function extractVideoId(url) {
+  const patterns = [
+    /(?:v=|\/videos\/|embed\/|youtu\.be\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+const statusEl = document.getElementById("status");
+const outEl = document.getElementById("transcript-out");
+
+document.getElementById("btn-fetch").addEventListener("click", async () => {
+  const url = document.getElementById("yt-url").value.trim();
+  const videoId = extractVideoId(url);
+  if (!videoId) { statusEl.textContent = "Valid YouTube URL daalein."; return; }
+
+  statusEl.textContent = "Transcript dhoondh raha hoon...";
+  outEl.value = "";
+
+  try {
+    const proxyBase = "https://api.allorigins.win/raw?url=";
+    const pageUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const pageRes = await fetch(proxyBase + encodeURIComponent(pageUrl));
+    const pageHtml = await pageRes.text();
+
+    const captionMatch = pageHtml.match(/"captionTracks":(\[.*?\])/);
+    if (!captionMatch) {
+      statusEl.textContent = "Is video ke captions nahi mile (shayad captions off hain).";
+      return;
+    }
+    const tracks = JSON.parse(captionMatch[1]);
+    if (!tracks.length) {
+      statusEl.textContent = "Koi caption track nahi mila.";
+      return;
+    }
+    let track = tracks.find(t => t.languageCode?.startsWith("en")) || tracks.find(t => t.languageCode?.startsWith("hi")) || tracks[0];
+    const captionUrl = track.baseUrl;
+
+    const capRes = await fetch(proxyBase + encodeURIComponent(captionUrl));
+    const capXml = await capRes.text();
+    const doc = new DOMParser().parseFromString(capXml, "text/xml");
+    const texts = [...doc.getElementsByTagName("text")].map(node => {
+      const txt = node.textContent
+        .replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&").replace(/&gt;/g, ">").replace(/&lt;/g, "<");
+      return txt;
+    });
+
+    if (!texts.length) {
+      statusEl.textContent = "Transcript empty aaya — service issue ho sakta hai.";
+      return;
+    }
+    outEl.value = texts.join(" ");
+    statusEl.textContent = `Done — language: ${track.languageCode}`;
+  } catch (err) {
+    statusEl.textContent = "Transcript fetch nahi ho paya — free service abhi down/slow hai, thodi der baad try karein.";
+  }
+});
+
+document.getElementById("btn-copy").addEventListener("click", () => {
+  navigator.clipboard.writeText(outEl.value);
+  statusEl.textContent = "Text copy ho gaya.";
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Volume Booster — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Volume Booster", sub: "Chupchap / dheeme audio ki loudness badhayein — free, clipping-safe limiter ke saath." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="drop-zone" id="drop-zone">🔉 Click ya drag karke audio file yahan daalein</div>
+    <input type="file" id="file-input" accept="audio/*" style="display:none;">
+    <div class="status-line" id="status"></div>
+
+    <div class="field-label" style="margin-top:14px;"><span>Boost amount</span><span id="boost-val">2.0x</span></div>
+    <input type="range" id="boost" min="1" max="4" step="0.1" value="2">
+
+    <div class="btn-group">
+      <button class="control-btn" id="btn-process">🔉 Boost Volume</button>
+      <button class="control-btn secondary" id="btn-download" disabled>⬇ Download</button>
+    </div>
+    <audio id="preview" controls style="display:none;margin-top:10px;"></audio>
+    <div class="hint">Ek safety limiter lagaya gaya hai taki zyada boost pe audio distort na ho.</div>
+  </div>
+`);
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const statusEl = document.getElementById("status");
+const preview = document.getElementById("preview");
+let currentFile = null, outBlob = null;
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => e.preventDefault());
+dropZone.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+function setFile(f) { currentFile = f; statusEl.textContent = `Selected: ${f.name} (${fmtBytes(f.size)})`; }
+
+const boostInput = document.getElementById("boost");
+boostInput.addEventListener("input", () => document.getElementById("boost-val").textContent = boostInput.value + "x");
+
+document.getElementById("btn-process").addEventListener("click", async () => {
+  if (!currentFile) { statusEl.textContent = "Pehle file choose karein."; return; }
+  statusEl.textContent = "Processing...";
+  const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const arrayBuf = await currentFile.arrayBuffer();
+  const decoded = await tempCtx.decodeAudioData(arrayBuf);
+
+  const offline = new OfflineAudioContext(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+
+  const gainNode = offline.createGain();
+  gainNode.gain.value = parseFloat(boostInput.value);
+
+  const limiter = offline.createDynamicsCompressor();
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.1;
+
+  src.connect(gainNode).connect(limiter).connect(offline.destination);
+  src.start(0);
+
+  const rendered = await offline.startRendering();
+  outBlob = audioBufferToWavBlob(rendered);
+  preview.src = URL.createObjectURL(outBlob);
+  preview.style.display = "block";
+  document.getElementById("btn-download").disabled = false;
+  statusEl.textContent = "Done!";
+});
+
+document.getElementById("btn-download").addEventListener("click", () => {
+  if (outBlob) downloadBlob(outBlob, "boosted-audio.wav");
+});
+</script>
+</body>
+</html>

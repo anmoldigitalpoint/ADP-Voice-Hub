@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio Format Converter — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Audio Format Converter", sub: "MP3, WAV, OGG ke beech convert karein — free, sab kuch browser mein." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="drop-zone" id="drop-zone">🔄 Click ya drag karke audio file yahan daalein</div>
+    <input type="file" id="file-input" accept="audio/*" style="display:none;">
+    <div class="status-line" id="status"></div>
+
+    <div class="field-label" style="margin-top:14px;"><span>Convert to</span></div>
+    <select id="format-select">
+      <option value="mp3">MP3</option>
+      <option value="wav">WAV</option>
+      <option value="ogg">OGG</option>
+    </select>
+
+    <div class="btn-group">
+      <button class="control-btn" id="btn-convert">🔄 Convert</button>
+      <button class="control-btn secondary" id="btn-download" disabled>⬇ Download</button>
+    </div>
+    <div class="progress-bar" id="progress"><div></div></div>
+    <audio id="preview" controls style="display:none;margin-top:10px;"></audio>
+  </div>
+`);
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const statusEl = document.getElementById("status");
+const preview = document.getElementById("preview");
+const progress = document.getElementById("progress");
+let currentFile = null, outBlob = null;
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => e.preventDefault());
+dropZone.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+function setFile(f) { currentFile = f; statusEl.textContent = `Selected: ${f.name} (${fmtBytes(f.size)})`; }
+
+document.getElementById("btn-convert").addEventListener("click", async () => {
+  if (!currentFile) { statusEl.textContent = "Pehle file choose karein."; return; }
+  const targetFormat = document.getElementById("format-select").value;
+  statusEl.textContent = "Loading engine...";
+  const ff = await getFFmpeg((pct) => setProgress(progress, pct));
+
+  const inName = "input" + (currentFile.name.match(/\.\w+$/)?.[0] || ".mp3");
+  ff.FS("writeFile", inName, await readFileAsUint8(currentFile));
+
+  statusEl.textContent = "Converting...";
+  const outName = "output." + targetFormat;
+  const codecArgs = targetFormat === "mp3" ? ["-acodec", "libmp3lame"] : targetFormat === "ogg" ? ["-acodec", "libvorbis"] : [];
+  await ff.run("-i", inName, ...codecArgs, outName);
+  const data = ff.FS("readFile", outName);
+  outBlob = new Blob([data.buffer], { type: "audio/" + targetFormat });
+  preview.src = URL.createObjectURL(outBlob);
+  preview.style.display = "block";
+  document.getElementById("btn-download").disabled = false;
+  statusEl.textContent = "Done!";
+
+  document.getElementById("btn-download").onclick = () => downloadBlob(outBlob, "converted." + targetFormat);
+});
+</script>
+</body>
+</html>

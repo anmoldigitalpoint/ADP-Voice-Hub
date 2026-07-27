@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vocal Remover — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Vocal Remover (Karaoke Mode)", sub: "Gaane se vocals kam karke karaoke-style track banayein — free center-channel trick." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="drop-zone" id="drop-zone">🎤 Click ya drag karke stereo song file yahan daalein</div>
+    <input type="file" id="file-input" accept="audio/*" style="display:none;">
+    <div class="status-line" id="status"></div>
+    <div class="btn-group">
+      <button class="control-btn" id="btn-process">🎤 Remove Vocals</button>
+      <button class="control-btn secondary" id="btn-download" disabled>⬇ Download</button>
+    </div>
+    <audio id="preview" controls style="display:none;"></audio>
+    <div class="hint warn">Note: Ye technique sirf stereo songs pe kaam karti hai jinme vocals center mein panned hain (zyadatar commercial songs). Mono files ya jo already center-cancelled hain unpe result kam effective hoga. 100% studio-quality separation ke liye paid AI tools (jaise LALAL.ai) chahiye hote hain.</div>
+  </div>
+`);
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const statusEl = document.getElementById("status");
+const preview = document.getElementById("preview");
+let currentFile = null, outBlob = null;
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => e.preventDefault());
+dropZone.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+function setFile(f) { currentFile = f; statusEl.textContent = `Selected: ${f.name} (${fmtBytes(f.size)})`; }
+
+document.getElementById("btn-process").addEventListener("click", async () => {
+  if (!currentFile) { statusEl.textContent = "Pehle file choose karein."; return; }
+  statusEl.textContent = "Processing...";
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const arrayBuf = await currentFile.arrayBuffer();
+  const decoded = await ctx.decodeAudioData(arrayBuf);
+
+  if (decoded.numberOfChannels < 2) {
+    statusEl.textContent = "Ye file mono hai — center-channel vocal removal sirf stereo files pe kaam karta hai.";
+    return;
+  }
+
+  const left = decoded.getChannelData(0);
+  const right = decoded.getChannelData(1);
+  const outBuffer = ctx.createBuffer(2, decoded.length, decoded.sampleRate);
+  const outL = outBuffer.getChannelData(0);
+  const outR = outBuffer.getChannelData(1);
+  for (let i = 0; i < decoded.length; i++) {
+    const diff = (left[i] - right[i]) * 0.5;
+    outL[i] = diff;
+    outR[i] = diff;
+  }
+  outBlob = audioBufferToWavBlob(outBuffer);
+  preview.src = URL.createObjectURL(outBlob);
+  preview.style.display = "block";
+  document.getElementById("btn-download").disabled = false;
+  statusEl.textContent = "Done!";
+});
+
+document.getElementById("btn-download").addEventListener("click", () => {
+  if (outBlob) downloadBlob(outBlob, "karaoke-track.wav");
+});
+</script>
+</body>
+</html>

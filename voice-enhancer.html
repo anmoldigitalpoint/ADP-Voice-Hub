@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Enhancer — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Voice Enhancer", sub: "Audio ko clear aur crisp banaye — background rumble kam kare, volume normalize kare. Free, browser mein hi." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="drop-zone" id="drop-zone">🎚️ Click ya drag karke audio file yahan daalein (mp3/wav/webm)</div>
+    <input type="file" id="file-input" accept="audio/*" style="display:none;">
+    <div class="status-line" id="status"></div>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <div class="field-label"><span>Noise / Rumble Cut</span></div>
+        <input type="range" id="highpass" min="0" max="400" value="120">
+      </div>
+      <div>
+        <div class="field-label"><span>Clarity Boost</span></div>
+        <input type="range" id="presence" min="0" max="12" value="6">
+      </div>
+      <div>
+        <div class="field-label"><span>Loudness Normalize</span></div>
+        <input type="range" id="gainamt" min="1" max="3" step="0.1" value="1.6">
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button class="control-btn" id="btn-process">✨ Enhance Audio</button>
+      <button class="control-btn secondary" id="btn-download" disabled>⬇ Download Enhanced</button>
+    </div>
+    <audio id="preview" controls style="display:none;"></audio>
+  </div>
+`);
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const statusEl = document.getElementById("status");
+const preview = document.getElementById("preview");
+let currentFile = null;
+let enhancedBlob = null;
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => e.preventDefault());
+dropZone.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+function setFile(f) {
+  currentFile = f;
+  statusEl.textContent = `Selected: ${f.name} (${fmtBytes(f.size)})`;
+}
+
+document.getElementById("btn-process").addEventListener("click", async () => {
+  if (!currentFile) { statusEl.textContent = "Pehle ek file choose karein."; return; }
+  statusEl.textContent = "Processing...";
+
+  const arrayBuf = await currentFile.arrayBuffer();
+  const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const decoded = await tempCtx.decodeAudioData(arrayBuf);
+
+  const offline = new OfflineAudioContext(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+
+  const highpass = offline.createBiquadFilter();
+  highpass.type = "highpass";
+  highpass.frequency.value = parseFloat(document.getElementById("highpass").value);
+
+  const presenceFilter = offline.createBiquadFilter();
+  presenceFilter.type = "peaking";
+  presenceFilter.frequency.value = 3200;
+  presenceFilter.Q.value = 1;
+  presenceFilter.gain.value = parseFloat(document.getElementById("presence").value);
+
+  const compressor = offline.createDynamicsCompressor();
+  compressor.threshold.value = -24;
+  compressor.knee.value = 30;
+  compressor.ratio.value = 6;
+  compressor.attack.value = 0.003;
+  compressor.release.value = 0.25;
+
+  const gainNode = offline.createGain();
+  gainNode.gain.value = parseFloat(document.getElementById("gainamt").value);
+
+  src.connect(highpass).connect(presenceFilter).connect(compressor).connect(gainNode).connect(offline.destination);
+  src.start(0);
+
+  const rendered = await offline.startRendering();
+  enhancedBlob = audioBufferToWavBlob(rendered);
+  preview.src = URL.createObjectURL(enhancedBlob);
+  preview.style.display = "block";
+  document.getElementById("btn-download").disabled = false;
+  statusEl.textContent = "Done! Neeche preview sun sakte hain.";
+});
+
+document.getElementById("btn-download").addEventListener("click", () => {
+  if (enhancedBlob) downloadBlob(enhancedBlob, "enhanced-audio.wav");
+});
+</script>
+</body>
+</html>

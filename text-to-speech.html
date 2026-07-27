@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Text to Speech — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Text to Speech", sub: "Type up to 5,000 words and listen in Hindi or English voices — 100% free, runs in your browser." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="field-label"><span>Your text</span><span id="word-count">0 / 5000 words</span></div>
+    <textarea id="tts-text" placeholder="Yahan apna text likhein... (Hindi ya English)"></textarea>
+    <div class="hint" id="tts-limit-hint"></div>
+
+    <div class="row" style="margin-top:16px;">
+      <div>
+        <div class="field-label"><span>Language</span></div>
+        <select id="lang-filter">
+          <option value="all">All available voices</option>
+          <option value="Hindi">Hindi only</option>
+          <option value="English">English only</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label"><span>Voice</span></div>
+        <select id="voice-select"></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <div class="field-label"><span>Speed</span><span id="rate-val">1.0x</span></div>
+        <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1">
+      </div>
+      <div>
+        <div class="field-label"><span>Pitch</span><span id="pitch-val">1.0</span></div>
+        <input type="range" id="pitch" min="0" max="2" step="0.1" value="1">
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button class="control-btn" id="btn-play">▶ Play</button>
+      <button class="control-btn secondary" id="btn-pause">⏸ Pause</button>
+      <button class="control-btn secondary" id="btn-stop">⏹ Stop</button>
+    </div>
+    <div class="status-line" id="tts-status">Voices load ho rahi hain...</div>
+    <div class="hint">Note: available voices device/browser par depend karti hain — Chrome desktop pe sabse zyada Hindi+English voices milti hain.</div>
+  </div>
+`);
+
+const MAX_WORDS = 5000;
+const textEl = document.getElementById("tts-text");
+const wordCountEl = document.getElementById("word-count");
+const voiceSelect = document.getElementById("voice-select");
+const langFilter = document.getElementById("lang-filter");
+const statusEl = document.getElementById("tts-status");
+
+function countWords(str) {
+  const t = str.trim();
+  return t ? t.split(/\s+/).length : 0;
+}
+
+textEl.addEventListener("input", () => {
+  let words = textEl.value.trim().split(/\s+/).filter(Boolean);
+  if (words.length > MAX_WORDS) {
+    textEl.value = words.slice(0, MAX_WORDS).join(" ");
+    document.getElementById("tts-limit-hint").textContent = "5000 words ki limit reach ho gayi.";
+  } else {
+    document.getElementById("tts-limit-hint").textContent = "";
+  }
+  wordCountEl.textContent = `${countWords(textEl.value)} / ${MAX_WORDS} words`;
+});
+
+function populateVoiceDropdown() {
+  const filter = langFilter.value;
+  voiceSelect.innerHTML = "";
+  const filtered = adpVoices.filter(v => filter === "all" || classifyVoiceLang(v) === filter);
+  if (!filtered.length) {
+    voiceSelect.innerHTML = `<option>Koi voice nahi mili is filter ke liye</option>`;
+    return;
+  }
+  filtered.forEach((v, i) => {
+    const opt = document.createElement("option");
+    opt.value = v.voiceURI;
+    opt.textContent = `${v.name} (${classifyVoiceLang(v)})`;
+    voiceSelect.appendChild(opt);
+  });
+}
+
+loadVoicesOnce((voices) => {
+  const hi = voices.filter(v => classifyVoiceLang(v) === "Hindi").length;
+  const en = voices.filter(v => classifyVoiceLang(v) === "English").length;
+  statusEl.textContent = `${voices.length} voices mili — Hindi: ${hi}, English: ${en}`;
+  populateVoiceDropdown();
+});
+
+langFilter.addEventListener("change", populateVoiceDropdown);
+
+const rateInput = document.getElementById("rate");
+const pitchInput = document.getElementById("pitch");
+rateInput.addEventListener("input", () => document.getElementById("rate-val").textContent = rateInput.value + "x");
+pitchInput.addEventListener("input", () => document.getElementById("pitch-val").textContent = pitchInput.value);
+
+document.getElementById("btn-play").addEventListener("click", () => {
+  const text = textEl.value.trim();
+  if (!text) { statusEl.textContent = "Pehle kuch text likhein."; return; }
+  const selected = adpVoices.find(v => v.voiceURI === voiceSelect.value);
+  speakText({
+    text,
+    voice: selected,
+    rate: parseFloat(rateInput.value),
+    pitch: parseFloat(pitchInput.value),
+    onend: () => statusEl.textContent = "Playback complete."
+  });
+  statusEl.textContent = "Bol raha hoon...";
+});
+
+document.getElementById("btn-pause").addEventListener("click", () => {
+  if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+    window.speechSynthesis.pause();
+    statusEl.textContent = "Paused.";
+  } else if (window.speechSynthesis.paused) {
+    window.speechSynthesis.resume();
+    statusEl.textContent = "Resumed.";
+  }
+});
+
+document.getElementById("btn-stop").addEventListener("click", () => {
+  window.speechSynthesis.cancel();
+  statusEl.textContent = "Stopped.";
+});
+</script>
+</body>
+</html>

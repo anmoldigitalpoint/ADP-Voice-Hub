@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Recorder — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Voice Recorder", sub: "Apni awaaz record karein aur seedha download karein — free, no upload." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="btn-group">
+      <button class="control-btn" id="btn-rec">⏺ Start Recording</button>
+      <button class="control-btn secondary" id="btn-rec-stop" disabled>⏹ Stop</button>
+    </div>
+    <div class="status-line" id="rec-status">Ready.</div>
+    <audio id="rec-audio" controls style="display:none;"></audio>
+    <div class="btn-group" id="download-row" style="display:none;">
+      <button class="control-btn secondary" id="btn-download">⬇ Download Recording</button>
+    </div>
+  </div>
+`);
+
+let mediaRecorder, chunks = [], stream;
+const statusEl = document.getElementById("rec-status");
+const audioEl = document.getElementById("rec-audio");
+let recordedBlob = null;
+
+document.getElementById("btn-rec").addEventListener("click", async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.onstop = () => {
+      recordedBlob = new Blob(chunks, { type: "audio/webm" });
+      audioEl.src = URL.createObjectURL(recordedBlob);
+      audioEl.style.display = "block";
+      document.getElementById("download-row").style.display = "flex";
+      statusEl.textContent = "Recording complete.";
+      stream.getTracks().forEach(t => t.stop());
+    };
+    mediaRecorder.start();
+    statusEl.textContent = "🔴 Recording...";
+    document.getElementById("btn-rec").disabled = true;
+    document.getElementById("btn-rec-stop").disabled = false;
+  } catch (err) {
+    statusEl.textContent = "Mic access nahi mila: " + err.message;
+  }
+});
+
+document.getElementById("btn-rec-stop").addEventListener("click", () => {
+  mediaRecorder.stop();
+  document.getElementById("btn-rec").disabled = false;
+  document.getElementById("btn-rec-stop").disabled = true;
+});
+
+document.getElementById("btn-download").addEventListener("click", () => {
+  if (recordedBlob) downloadBlob(recordedBlob, "recording.webm");
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio Merger — ADP Voice Hub</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0a17">
+<link rel="stylesheet" href="style.css">
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+</head>
+<body>
+<div id="app-shell-root"></div>
+<script src="app-shell.js"></script>
+<script src="audio-engine.js"></script>
+<script>
+renderShell({ title: "Audio Merger", sub: "2 ya zyada audio files ko jodkar ek file banayein — order wahi rahega jis order mein daala jaye." });
+
+document.getElementById("page-content").insertAdjacentHTML("beforeend", `
+  <div class="tool-panel">
+    <div class="drop-zone" id="drop-zone">🔗 Click ya drag karke 2+ audio files ek saath chunein</div>
+    <input type="file" id="file-input" accept="audio/*" multiple style="display:none;">
+    <div id="file-list" style="margin-top:12px;"></div>
+    <div class="status-line" id="status"></div>
+
+    <div class="btn-group">
+      <button class="control-btn" id="btn-merge">🔗 Merge Files</button>
+      <button class="control-btn secondary" id="btn-download" disabled>⬇ Download</button>
+    </div>
+    <div class="progress-bar" id="progress"><div></div></div>
+    <audio id="preview" controls style="display:none;margin-top:10px;"></audio>
+  </div>
+`);
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const statusEl = document.getElementById("status");
+const fileListEl = document.getElementById("file-list");
+const preview = document.getElementById("preview");
+const progress = document.getElementById("progress");
+let files = [];
+let outBlob = null;
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => e.preventDefault());
+dropZone.addEventListener("drop", e => { e.preventDefault(); setFiles([...e.dataTransfer.files]); });
+fileInput.addEventListener("change", () => setFiles([...fileInput.files]));
+
+function setFiles(list) {
+  files = list;
+  fileListEl.innerHTML = files.map((f, i) => `<div class="hint">${i + 1}. ${f.name} (${fmtBytes(f.size)})</div>`).join("");
+  statusEl.textContent = `${files.length} files selected.`;
+}
+
+document.getElementById("btn-merge").addEventListener("click", async () => {
+  if (files.length < 2) { statusEl.textContent = "Kam se kam 2 files chunein."; return; }
+  statusEl.textContent = "Loading engine...";
+  const ff = await getFFmpeg((pct) => setProgress(progress, pct));
+
+  const listLines = [];
+  for (let i = 0; i < files.length; i++) {
+    const name = `part${i}.mp3`;
+    ff.FS("writeFile", name, await readFileAsUint8(files[i]));
+    // normalize each part to mp3 first so concat works across mixed formats
+    const rawName = `raw${i}` + (files[i].name.match(/\.\w+$/)?.[0] || ".mp3");
+    ff.FS("writeFile", rawName, await readFileAsUint8(files[i]));
+    await ff.run("-i", rawName, name);
+    listLines.push(`file '${name}'`);
+  }
+  ff.FS("writeFile", "list.txt", new TextEncoder().encode(listLines.join("\n")));
+
+  statusEl.textContent = "Merging...";
+  await ff.run("-f", "concat", "-safe", "0", "-i", "list.txt", "-acodec", "libmp3lame", "merged.mp3");
+  const data = ff.FS("readFile", "merged.mp3");
+  outBlob = new Blob([data.buffer], { type: "audio/mp3" });
+  preview.src = URL.createObjectURL(outBlob);
+  preview.style.display = "block";
+  document.getElementById("btn-download").disabled = false;
+  statusEl.textContent = "Done!";
+});
+
+document.getElementById("btn-download").addEventListener("click", () => {
+  if (outBlob) downloadBlob(outBlob, "merged-audio.mp3");
+});
+</script>
+</body>
+</html>
